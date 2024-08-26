@@ -13,18 +13,16 @@ import (
 )
 
 type Endpoints struct {
-	AddContactEndpoint  http.HandlerFunc
-	GetContactsEndpoint http.HandlerFunc
-	//SearchContactEndpoint http.HandlerFunc
+	AddContactEndpoint    http.HandlerFunc
+	GetContactsEndpoint   http.HandlerFunc
 	UpdateContactEndpoint http.HandlerFunc
 	DeleteContactEndpoint http.HandlerFunc
 }
 
 func MakeEndpoints(s Service) Endpoints {
 	return Endpoints{
-		AddContactEndpoint:  makeAddContactEndpoint(s),
-		GetContactsEndpoint: makeGetContactsEndpoint(s),
-		//SearchContactEndpoint: makeSearchContactEndpoint(s),
+		AddContactEndpoint:    makeAddContactEndpoint(s),
+		GetContactsEndpoint:   makeGetContactsEndpoint(s),
 		UpdateContactEndpoint: makeUpdateContactEndpoint(s),
 		DeleteContactEndpoint: makeDeleteContactEndpoint(s),
 	}
@@ -77,21 +75,6 @@ func makeGetContactsEndpoint(s Service) http.HandlerFunc {
 		}
 	}
 }
-
-// func makeSearchContactEndpoint(s Service) http.HandlerFunc {
-// 	return func(w http.ResponseWriter, r *http.Request) {
-// 		query := r.URL.Query().Get("q")
-// 		contacts, err := s.SearchContact(context.Background(), query)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), http.StatusInternalServerError)
-// 			return
-// 		}
-// 		w.Header().Set("Content-Type", "application/json")
-// 		if err := json.NewEncoder(w).Encode(contacts); err != nil {
-// 			log.Printf("Error encoding response: %v", err)
-// 		}
-// 	}
-// }
 
 func makeUpdateContactEndpoint(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
