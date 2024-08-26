@@ -56,7 +56,7 @@ func (s *service) AddContact(ctx context.Context, c contact.Contact) (string, er
 func (s *service) GetContacts(ctx context.Context, query string) ([]contact.Contact, error) {
 	contacts, err := s.repo.SearchContacts(ctx, query)
 	if err != nil {
-
+		return nil, err
 	}
 	return contacts, nil
 }
