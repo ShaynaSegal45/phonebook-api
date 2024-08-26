@@ -1,11 +1,11 @@
 # Phone Book API
 
-A simple phone book Web Server API built with Go.
+A simple phone book Web Server API.
 
 ## Features
 - Add a contact
-- Get contacts with pagination
-- Search for a contact
+- Get contact 
+- Search for contacts
 - Update a contact
 - Delete a contact
 
