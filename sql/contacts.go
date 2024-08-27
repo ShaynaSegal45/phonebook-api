@@ -37,12 +37,13 @@ func (r *ContactsRepo) GetContact(ctx context.Context, id string) (contact.Conta
 	return c, nil
 }
 
-func (r *ContactsRepo) SearchContacts(ctx context.Context, query string) ([]contact.Contact, error) {
+func (r *ContactsRepo) SearchContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, error) {
 	queryLike := `%` + query + `%`
 	sqlQuery := `SELECT id, firstname, 
                 lastname, phone, address FROM contacts WHERE ? = "" 
-                OR firstname LIKE ? OR lastname LIKE ? OR phone LIKE ?`
-	rows, err := r.db.QueryContext(ctx, sqlQuery, query, queryLike, queryLike, queryLike)
+                OR firstname LIKE ? OR lastname LIKE ? OR phone LIKE ?
+				LIMIT ? OFFSET ?`
+	rows, err := r.db.QueryContext(ctx, sqlQuery, query, queryLike, queryLike, queryLike, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search contacts: %w", err)
 	}
@@ -57,6 +58,21 @@ func (r *ContactsRepo) SearchContacts(ctx context.Context, query string) ([]cont
 		contacts = append(contacts, c)
 	}
 	return contacts, nil
+}
+
+func (r *ContactsRepo) CountContacts(ctx context.Context, query string) (int, error) {
+	queryLike := `%` + query + `%`
+
+	sqlQuery := `SELECT count(*) FROM contacts WHERE ? = "" OR
+                  (firstname LIKE ? OR lastname LIKE ? OR phone LIKE ?)`
+
+	var count int
+	err := r.db.QueryRowContext(ctx, sqlQuery, query, queryLike, queryLike, queryLike).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count contacts: %w", err)
+	}
+
+	return count, nil
 }
 
 func (r *ContactsRepo) UpdateContact(ctx context.Context, id string, c contact.Contact) error {
