@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	//"errors"
 	"fmt"
 	"net/http"
 
@@ -32,6 +31,7 @@ type Service interface {
 	AddContact(ctx context.Context, c contact.Contact) (string, error)
 	GetContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, error)
 	CountContacts(ctx context.Context, query string) (int, error)
+	GetContact(ctx context.Context, id string) (contact.Contact, error)
 	UpdateContact(ctx context.Context, id string, c contact.Contact) error
 	DeleteContact(ctx context.Context, id string) error
 }
@@ -42,6 +42,7 @@ func NewHTTPHandler(s Service) http.Handler {
 
 	router.Post("/contact", endpoint.AddContactEndpoint)
 	router.Get("/contacts", endpoint.GetContactsEndpoint)
+	router.Get("/contact/{id}", endpoint.GetContactEndpoint)
 	router.Put("/contact/{id}", endpoint.UpdateContactEndpoint)
 	router.Delete("/contact/{id}", endpoint.DeleteContactEndpoint)
 	router.Get("/ping", pingHandler)
@@ -54,14 +55,14 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("pong"))
 }
 
-func encodeSearchContactsHandlerResponse(w http.ResponseWriter, response interface{}, queryParams map[string]string) {
+func encodeSearchContactsHandlerResponse(w http.ResponseWriter, response interface{}) {
 	res, ok := response.(SearchContactsResponse)
 	if !ok {
 		http.Error(w, "Invalid response type", http.StatusInternalServerError)
 		return
 	}
 
-	pagination := encodeSearchContactsPagination(context.Background(), res.Pagination, res.TotalContactsCount, queryParams)
+	pagination := encodeSearchContactsPagination(context.Background(), res.Pagination, res.TotalContactsCount)
 
 	contactsjson := map[string]interface{}{
 		"contacts":   res.Contacts,
@@ -75,11 +76,19 @@ func encodeSearchContactsHandlerResponse(w http.ResponseWriter, response interfa
 	}
 }
 
-func encodeSearchContactsPagination(ctx context.Context, pagination Pagination, totalContacts int, queryParams map[string]string) map[string]interface{} {
+func encodeSearchContactsPagination(ctx context.Context, pagination Pagination, totalContacts int) map[string]interface{} {
 	baseURL := "/contacts"
 	queryParamsStr := ""
+	paginationDefaultQueries := make(map[string]bool)
+	paginationDefaultQueries["count"] = true
+	paginationDefaultQueries["limit"] = true
+	paginationDefaultQueries["offset"] = true
 
-	for k, v := range queryParams {
+	for k, v := range pagination.queryParams {
+		_, ok := paginationDefaultQueries[k]
+		if ok {
+			continue
+		}
 		if queryParamsStr == "" {
 			queryParamsStr = fmt.Sprintf("%s=%s", k, v)
 		} else {
@@ -111,22 +120,3 @@ func encodeSearchContactsPagination(ctx context.Context, pagination Pagination, 
 		"count": totalContacts,
 	}
 }
-
-// func encodeSearchContactsPagination(ctx context.Context, pagination Pagination, totalContacts int) map[string]interface{} {
-// 	var next, prev string
-// 	if pagination.next != nil {
-// 		next = fmt.Sprintf("/contacts?limit=%v&offset=%v&count=%v", pagination.next.limit, pagination.next.offset, totalContacts)
-// 		next = next
-// 	}
-
-// 	if pagination.prev != nil {
-// 		prev = fmt.Sprintf("/contacts?limit=%v&offset=%v&count=%v", pagination.prev.limit, pagination.prev.offset, totalContacts)
-// 		prev = prev
-// 	}
-
-// 	return map[string]interface{}{
-// 		"next":  next,
-// 		"prev":  prev,
-// 		"count": totalContacts,
-// 	}
-// }

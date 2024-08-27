@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -13,9 +14,10 @@ import (
 )
 
 type Pagination struct {
-	next  *paginationValues `json:"next,omitempty"`
-	prev  *paginationValues `json:"prev,omitempty"`
-	count int               `json:"count"`
+	next        *paginationValues `json:"next,omitempty"`
+	prev        *paginationValues `json:"prev,omitempty"`
+	count       int               `json:"count"`
+	queryParams map[string]string `json:"queryParams"`
 }
 
 type paginationValues struct {
@@ -32,6 +34,7 @@ type SearchContactsResponse struct {
 type Endpoints struct {
 	AddContactEndpoint    http.HandlerFunc
 	GetContactsEndpoint   http.HandlerFunc
+	GetContactEndpoint    http.HandlerFunc
 	UpdateContactEndpoint http.HandlerFunc
 	DeleteContactEndpoint http.HandlerFunc
 }
@@ -40,6 +43,7 @@ func MakeEndpoints(s Service) Endpoints {
 	return Endpoints{
 		AddContactEndpoint:    makeAddContactEndpoint(s),
 		GetContactsEndpoint:   makeGetContactsEndpoint(s),
+		GetContactEndpoint:    makeGetContactEndpoint(s),
 		UpdateContactEndpoint: makeUpdateContactEndpoint(s),
 		DeleteContactEndpoint: makeDeleteContactEndpoint(s),
 	}
@@ -101,73 +105,19 @@ func makeGetContactsEndpoint(s Service) http.HandlerFunc {
 			return
 		}
 
-		pagination := createPagination(offset, limit, totalContacts)
+		pagination := createPagination(offset, limit, totalContacts, r.URL)
 
-		// Extract query parameters
-		queryParams := r.URL.Query()
-
-		// Convert query parameters to a map
-		queryParamsMap := make(map[string]string)
-		for key, values := range queryParams {
-			if len(values) > 0 {
-				queryParamsMap[key] = values[0]
-			}
-		}
-
-		//encodeSearchContactsPagination(context.Background(), pagination, totalContacts, queryParamsMap)
-
-		// Create response
 		response := SearchContactsResponse{
 			Contacts:           contacts,
 			Pagination:         pagination,
 			TotalContactsCount: totalContacts,
 		}
 
-		encodeSearchContactsHandlerResponse(w, response, queryParamsMap)
+		encodeSearchContactsHandlerResponse(w, response)
 	}
 }
 
-// func makeGetContactsEndpoint(s Service) http.HandlerFunc {
-// 	return func(w http.ResponseWriter, r *http.Request) {
-// 		query := r.URL.Query().Get(fullTextParam)
-// 		limitStr := r.URL.Query().Get(limitParam)
-// 		offsetStr := r.URL.Query().Get(offsetParam)
-
-// 		limit, err := strconv.Atoi(limitStr)
-// 		if err != nil || limit <= 0 {
-// 			limit = defaultCount
-// 		}
-
-// 		offset, err := strconv.Atoi(offsetStr)
-// 		if err != nil || offset < 0 {
-// 			offset = defaultOffset
-// 		}
-
-// 		contacts, err := s.GetContacts(context.Background(), limit, offset, query)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), http.StatusInternalServerError)
-// 			return
-// 		}
-
-// 		totalContacts, err := s.CountContacts(context.Background(), query)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), http.StatusInternalServerError)
-// 			return
-// 		}
-
-// 		pagination := createPagination(offset, limit, totalContacts)
-
-// 		response := SearchContactsResponse{
-// 			Contacts:           contacts,
-// 			Pagination:         pagination,
-// 			TotalContactsCount: totalContacts,
-// 		}
-
-// 		encodeSearchContactsHandlerResponse(w, response)
-// 	}
-// }
-
-func createPagination(offset, limit, totalContacts int) Pagination {
+func createPagination(offset, limit, totalContacts int, url *url.URL) Pagination {
 	var next, prev *paginationValues
 
 	if offset+limit < totalContacts {
@@ -184,10 +134,19 @@ func createPagination(offset, limit, totalContacts int) Pagination {
 		}
 	}
 
+	queryParams := url.Query()
+	queryParamsMap := make(map[string]string)
+	for key, values := range queryParams {
+		if len(values) > 0 {
+			queryParamsMap[key] = values[0]
+		}
+	}
+
 	return Pagination{
-		next:  next,
-		prev:  prev,
-		count: totalContacts,
+		next:        next,
+		prev:        prev,
+		count:       totalContacts,
+		queryParams: queryParamsMap,
 	}
 }
 
@@ -198,9 +157,29 @@ func max(a, b int) int {
 	return b
 }
 
+func makeGetContactEndpoint(s Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, idParam)
+
+		contact, err := s.GetContact(context.Background(), id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		if err := json.NewEncoder(w).Encode(contact); err != nil {
+			http.Error(w, "Error encoding response", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
 func makeUpdateContactEndpoint(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := chi.URLParam(r, "id")
+		id := chi.URLParam(r, idParam)
 		var updatedContact contact.Contact
 		if err := json.NewDecoder(r.Body).Decode(&updatedContact); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -216,7 +195,7 @@ func makeUpdateContactEndpoint(s Service) http.HandlerFunc {
 
 func makeDeleteContactEndpoint(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := chi.URLParam(r, "id")
+		id := chi.URLParam(r, idParam)
 		if err := s.DeleteContact(context.Background(), id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

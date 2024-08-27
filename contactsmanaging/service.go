@@ -72,6 +72,13 @@ func (s *service) CountContacts(ctx context.Context, query string) (int, error) 
 	return count, nil
 }
 
+//	GetContact(ctx context.Context, id string) (contact.Contact, error)
+
+func (s *service) GetContact(ctx context.Context, id string) (contact.Contact, error) {
+
+	return s.repo.GetContact(ctx, id)
+}
+
 func (s *service) UpdateContact(ctx context.Context, id string, updatedContact contact.Contact) error {
 	return s.repo.UpdateContact(ctx, id, updatedContact)
 }
