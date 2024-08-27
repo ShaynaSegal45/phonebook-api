@@ -9,12 +9,15 @@ import (
 	"github.com/ShaynaSegal45/phonebook-api/contact"
 )
 
-const pageSize = 2 // TODO: Change to 10
+//const pageSize = 2 // TODO: Change to 10
 
 type ContactsRepo interface {
 	InsertContact(ctx context.Context, c contact.Contact) error
 	GetContact(ctx context.Context, id string) (contact.Contact, error)
-	SearchContacts(ctx context.Context, query string) ([]contact.Contact, error)
+
+	SearchContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, error)
+	CountContacts(ctx context.Context, query string) (int, error)
+
 	UpdateContact(ctx context.Context, id string, c contact.Contact) error
 	DeleteContact(ctx context.Context, id string) error
 	ContactExists(ctx context.Context, firstName, lastName string) (bool, error)
@@ -53,12 +56,20 @@ func (s *service) AddContact(ctx context.Context, c contact.Contact) (string, er
 	return id, nil
 }
 
-func (s *service) GetContacts(ctx context.Context, query string) ([]contact.Contact, error) {
-	contacts, err := s.repo.SearchContacts(ctx, query)
+func (s *service) GetContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, error) {
+	contacts, err := s.repo.SearchContacts(ctx, limit, offset, query)
 	if err != nil {
 		return nil, err
 	}
 	return contacts, nil
+}
+
+func (s *service) CountContacts(ctx context.Context, query string) (int, error) {
+	count, err := s.repo.CountContacts(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (s *service) UpdateContact(ctx context.Context, id string, updatedContact contact.Contact) error {
