@@ -3,12 +3,15 @@ package contactsmanaging
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 
 	"fmt"
 	"net/http"
 
-	"github.com/ShaynaSegal45/phonebook-api/contact"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/ShaynaSegal45/phonebook-api/contact"
+	"github.com/ShaynaSegal45/phonebook-api/errors"
 )
 
 const (
@@ -19,21 +22,18 @@ const (
 	countParam  = "count"
 	limitParam  = "limit"
 
-	defaultOffsetStr = "0"
-	defaultCountStr  = "2"
-
-	defaultOffset = 0
-	defaultCount  = 2
+	defaultOffset int = 0
+	defaultCount  int = 2
 )
 
 type Service interface {
 	Ping(ctx context.Context) string
-	AddContact(ctx context.Context, c contact.Contact) (string, error)
-	GetContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, error)
-	CountContacts(ctx context.Context, query string) (int, error)
-	GetContact(ctx context.Context, id string) (contact.Contact, error)
-	UpdateContact(ctx context.Context, id string, c contact.Contact) error
-	DeleteContact(ctx context.Context, id string) error
+	AddContact(ctx context.Context, c contact.Contact) (string, *errors.Error)
+	GetContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, *errors.Error)
+	CountContacts(ctx context.Context, query string) (int, *errors.Error)
+	GetContact(ctx context.Context, id string) (contact.Contact, *errors.Error)
+	UpdateContact(ctx context.Context, id string, c contact.Contact) *errors.Error
+	DeleteContact(ctx context.Context, id string) *errors.Error
 }
 
 func NewHTTPHandler(s Service) http.Handler {
@@ -53,6 +53,136 @@ func NewHTTPHandler(s Service) http.Handler {
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("pong"))
+}
+
+type CreateContactRequest struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Phone     string `json:"phone"`
+	Address   string `json:"address"`
+}
+
+type UpdateContactRequest struct {
+	ID        string `json:"id"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Phone     string `json:"phone"`
+	Address   string `json:"address"`
+}
+
+type GetContactRequest struct {
+	ID string `json:"id"`
+}
+
+type DeleteContactRequest struct {
+	ID string `json:"id"`
+}
+
+type SearchContactsRequest struct {
+	Text   string `json: "fullText"`
+	Offset int    `json: "offset"`
+	Limit  int    `json: "limit"`
+}
+
+type GetContactResponse struct {
+	ID        string `json:"id"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Phone     string `json:"phone"`
+	Address   string `json:"address"`
+}
+
+func decodeAddContactRequest(r *http.Request) (interface{}, error) {
+	var req CreateContactRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+
+	return req, err
+}
+
+func decodeGetContactRequest(r *http.Request) (interface{}, error) {
+	return GetContactRequest{
+		ID: r.URL.Query().Get(idParam),
+	}, nil
+}
+
+func decodeUpdateContactRequest(r *http.Request) (interface{}, error) {
+	var req UpdateContactRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	req.ID = r.URL.Query().Get(idParam)
+	return req, err
+}
+
+func decodeDeleteContactRequest(r *http.Request) (interface{}, error) {
+	return DeleteContactRequest{
+		ID: r.URL.Query().Get(idParam),
+	}, nil
+}
+
+func decodeSearchContactsRequest(r *http.Request) (interface{}, error) {
+	query := r.URL.Query().Get(fullTextParam)
+	limitStr := r.URL.Query().Get(limitParam)
+	offsetStr := r.URL.Query().Get(offsetParam)
+
+	limit, parsingErr := strconv.Atoi(limitStr)
+	if parsingErr != nil || limit <= 0 {
+		limit = defaultCount
+	}
+
+	offset, parsingErr := strconv.Atoi(offsetStr)
+	if parsingErr != nil || offset < 0 {
+		offset = defaultOffset
+	}
+
+	return SearchContactsRequest{
+		Text:   query,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
+}
+
+func encodeAddContactResponse(w http.ResponseWriter, id string) {
+	response := map[string]string{"id": id}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
+}
+
+func encodeGetContactResponse(w http.ResponseWriter, response interface{}) {
+	res, ok := response.(GetContactResponse)
+	if !ok {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// todo return id in service
+func encodeUpdateContactResponse(w http.ResponseWriter, id string) {
+	response := map[string]string{"id": id}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
+}
+
+func encodeDeleteContactResponse(w http.ResponseWriter) {
+	response := map[string]string{}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
 }
 
 func encodeSearchContactsHandlerResponse(w http.ResponseWriter, response interface{}) {
