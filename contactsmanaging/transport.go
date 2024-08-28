@@ -3,10 +3,9 @@ package contactsmanaging
 import (
 	"context"
 	"encoding/json"
-	"strconv"
-
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -23,16 +22,16 @@ const (
 	limitParam  = "limit"
 
 	defaultOffset int = 0
-	defaultCount  int = 2
+	defaultCount  int = 10
 )
 
 type Service interface {
 	Ping(ctx context.Context) string
 	AddContact(ctx context.Context, c contact.Contact) (string, *errors.Error)
-	GetContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, *errors.Error)
+	GetContacts(ctx context.Context, filters contact.Filters) ([]contact.Contact, *errors.Error)
 	CountContacts(ctx context.Context, query string) (int, *errors.Error)
 	GetContact(ctx context.Context, id string) (contact.Contact, *errors.Error)
-	UpdateContact(ctx context.Context, id string, c contact.Contact) *errors.Error
+	UpdateContact(ctx context.Context, c contact.Contact) *errors.Error
 	DeleteContact(ctx context.Context, id string) *errors.Error
 }
 
@@ -79,9 +78,9 @@ type DeleteContactRequest struct {
 }
 
 type SearchContactsRequest struct {
-	Text   string `json: "fullText"`
-	Offset int    `json: "offset"`
-	Limit  int    `json: "limit"`
+	Text   string
+	Offset int
+	Limit  int
 }
 
 type GetContactResponse struct {
@@ -95,26 +94,28 @@ type GetContactResponse struct {
 func decodeAddContactRequest(r *http.Request) (interface{}, error) {
 	var req CreateContactRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
-
 	return req, err
 }
 
 func decodeGetContactRequest(r *http.Request) (interface{}, error) {
+	id := chi.URLParam(r, idParam)
 	return GetContactRequest{
-		ID: r.URL.Query().Get(idParam),
+		ID: id,
 	}, nil
 }
 
 func decodeUpdateContactRequest(r *http.Request) (interface{}, error) {
+	id := chi.URLParam(r, idParam)
 	var req UpdateContactRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
-	req.ID = r.URL.Query().Get(idParam)
+	req.ID = id
 	return req, err
 }
 
 func decodeDeleteContactRequest(r *http.Request) (interface{}, error) {
+	id := chi.URLParam(r, idParam)
 	return DeleteContactRequest{
-		ID: r.URL.Query().Get(idParam),
+		ID: id,
 	}, nil
 }
 
@@ -155,18 +156,25 @@ func encodeGetContactResponse(w http.ResponseWriter, response interface{}) {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
 	}
+	contactJson := map[string]interface{}{
+		"id":        res.ID,
+		"firstname": res.FirstName,
+		"lastname":  res.LastName,
+		"phone":     res.Phone,
+		"address":   res.Address,
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(res); err != nil {
+
+	if err := json.NewEncoder(w).Encode(contactJson); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
 	}
 }
 
-// todo return id in service
-func encodeUpdateContactResponse(w http.ResponseWriter, id string) {
-	response := map[string]string{"id": id}
+func encodeUpdateContactResponse(w http.ResponseWriter) {
+	response := map[string]string{}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -208,23 +216,7 @@ func encodeSearchContactsHandlerResponse(w http.ResponseWriter, response interfa
 
 func encodeSearchContactsPagination(ctx context.Context, pagination Pagination, totalContacts int) map[string]interface{} {
 	baseURL := "/contacts"
-	queryParamsStr := ""
-	paginationDefaultQueries := make(map[string]bool)
-	paginationDefaultQueries["count"] = true
-	paginationDefaultQueries["limit"] = true
-	paginationDefaultQueries["offset"] = true
-
-	for k, v := range pagination.queryParams {
-		_, ok := paginationDefaultQueries[k]
-		if ok {
-			continue
-		}
-		if queryParamsStr == "" {
-			queryParamsStr = fmt.Sprintf("%s=%s", k, v)
-		} else {
-			queryParamsStr = fmt.Sprintf("%s&%s=%s", queryParamsStr, k, v)
-		}
-	}
+	queryParamsStr := buildQueryParamsStr(pagination.queryParams)
 
 	var next, prev string
 
@@ -249,4 +241,26 @@ func encodeSearchContactsPagination(ctx context.Context, pagination Pagination, 
 		"prev":  prev,
 		"count": totalContacts,
 	}
+}
+
+func buildQueryParamsStr(queryParams map[string]string) string {
+	queryParamsStr := ""
+	paginationDefaultQueries := map[string]bool{
+		"count":  true,
+		"limit":  true,
+		"offset": true,
+	}
+
+	for k, v := range queryParams {
+		if _, ok := paginationDefaultQueries[k]; ok {
+			continue
+		}
+		if queryParamsStr == "" {
+			queryParamsStr = fmt.Sprintf("%s=%s", k, v)
+		} else {
+			queryParamsStr = fmt.Sprintf("%s&%s=%s", queryParamsStr, k, v)
+		}
+	}
+
+	return queryParamsStr
 }

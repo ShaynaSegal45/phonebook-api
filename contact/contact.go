@@ -10,6 +10,6 @@ type Contact struct {
 
 type Filters struct {
 	FullText string
-	Limit    int64
-	Offset   int64
+	Limit    int
+	Offset   int
 }
