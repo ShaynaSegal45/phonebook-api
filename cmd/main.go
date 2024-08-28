@@ -1,21 +1,26 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 
+	"github.com/go-redis/redis/v8"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/ShaynaSegal45/phonebook-api/contactsmanaging"
-	mysql "github.com/ShaynaSegal45/phonebook-api/sql"
+	sqldb "github.com/ShaynaSegal45/phonebook-api/sql"
 )
 
 func main() {
 	db := initializeDatabase()
+	rdb := initRedisClient()
 	defer db.Close()
+	defer rdb.Close()
 
-	repo := mysql.NewContactsRepo(db)
+	repo := sqldb.NewContactsRepo(db, rdb)
 	service := contactsmanaging.NewService(repo)
 	router := contactsmanaging.NewHTTPHandler(service)
 
@@ -50,4 +55,20 @@ func startServer(router http.Handler) {
 	if err := http.ListenAndServe(":8080", router); err != nil {
 		log.Fatalf("could not start server: %v\n", err)
 	}
+}
+
+func initRedisClient() *redis.Client {
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	pong, err := rdb.Ping(context.Background()).Result()
+	if err != nil {
+		log.Fatalf("could not connect to Redis: %v", err)
+	}
+	fmt.Println(pong)
+
+	return rdb
 }

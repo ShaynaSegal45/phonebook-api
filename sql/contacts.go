@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+
 	"log"
+
+	"github.com/go-redis/redis/v8"
 
 	"github.com/ShaynaSegal45/phonebook-api/contact"
 	"github.com/ShaynaSegal45/phonebook-api/errors"
@@ -13,12 +17,14 @@ import (
 const operationName = "contactsmanaging"
 
 type ContactsRepo struct {
-	db *sql.DB
+	db    *sql.DB
+	cache *redis.Client
 }
 
-func NewContactsRepo(db *sql.DB) *ContactsRepo {
+func NewContactsRepo(db *sql.DB, cache *redis.Client) *ContactsRepo {
 	return &ContactsRepo{
-		db: db,
+		db:    db,
+		cache: cache,
 	}
 }
 
@@ -32,25 +38,6 @@ func (r *ContactsRepo) InsertContact(ctx context.Context, c contact.Contact) *er
 	}
 
 	return nil
-}
-
-func (r *ContactsRepo) GetContact(ctx context.Context, id string) (contact.Contact, *errors.Error) {
-	query := `SELECT id, firstname, lastname, address, phone FROM contacts WHERE id = ?`
-	var c contact.Contact
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.FirstName, &c.LastName, &c.Address, &c.Phone)
-	if err != nil {
-		errMsg := fmt.Sprintf("ContactsRepo.GetContact: failed to get contact with id %s", id)
-
-		if err == sql.ErrNoRows {
-			log.Printf("%s: contact not found", errMsg)
-			return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.NotFoundError)
-		}
-
-		log.Printf("%s: %v", errMsg, err)
-		return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.InternalError)
-	}
-
-	return c, nil
 }
 
 func (r *ContactsRepo) SearchContacts(ctx context.Context, f contact.Filters) ([]contact.Contact, *errors.Error) {
@@ -170,4 +157,48 @@ func buildUpdateQuery(c contact.Contact) (string, []interface{}) {
 	args = append(args, c.ID)
 
 	return query, args
+}
+
+func (r *ContactsRepo) GetContact(ctx context.Context, id string) (contact.Contact, *errors.Error) {
+	cachedContact, err := r.cache.Get(ctx, id).Result()
+	if err == redis.Nil {
+
+		var c contact.Contact
+		query := `SELECT id, firstname, lastname, address, phone FROM contacts WHERE id = ?`
+		err = r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.FirstName, &c.LastName, &c.Address, &c.Phone)
+		if err != nil {
+			errMsg := fmt.Sprintf("ContactsRepo.GetContact: failed to get contact with id %s", id)
+			if err == sql.ErrNoRows {
+				log.Printf("%s: contact not found", errMsg)
+				return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.NotFoundError)
+			}
+			log.Printf("%s: %v", errMsg, err)
+			return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.InternalError)
+		}
+
+		err = r.cache.Set(ctx, id, fmt.Sprintf("%s,%s,%s,%s,%s", c.ID, c.FirstName, c.LastName, c.Address, c.Phone), 0).Err()
+		if err != nil {
+			log.Printf("Failed to set cache for contact id %s: %v", id, err)
+		}
+
+		return c, nil
+
+	} else if err != nil {
+		return contact.Contact{}, errors.CreateError(operationName, "failed to get cache", err, errors.InternalError)
+	}
+
+	contact := DeserializeContact(cachedContact)
+	return contact, nil
+}
+
+func DeserializeContact(data string) contact.Contact {
+
+	fields := strings.Split(data, ",")
+	return contact.Contact{
+		ID:        fields[0],
+		FirstName: fields[1],
+		LastName:  fields[2],
+		Address:   fields[3],
+		Phone:     fields[4],
+	}
 }
