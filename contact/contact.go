@@ -7,3 +7,9 @@ type Contact struct {
 	Phone     string `json:"phone"`
 	Address   string `json:"address"`
 }
+
+type Filters struct {
+	FullText string
+	Limit    int64
+	Offset   int64
+}

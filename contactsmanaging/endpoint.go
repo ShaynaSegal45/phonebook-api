@@ -2,27 +2,22 @@ package contactsmanaging
 
 import (
 	"context"
-	"encoding/json"
-	"log"
 	"net/http"
 	"net/url"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/ShaynaSegal45/phonebook-api/contact"
 )
 
 type Pagination struct {
-	next        *paginationValues `json:"next,omitempty"`
-	prev        *paginationValues `json:"prev,omitempty"`
-	count       int               `json:"count"`
-	queryParams map[string]string `json:"queryParams"`
+	next        *paginationValues
+	prev        *paginationValues
+	count       int
+	queryParams map[string]string
 }
 
 type paginationValues struct {
-	limit  int64 `json:"limit"`
-	offset int64 `json:"offset"`
+	limit  int64
+	offset int64
 }
 
 type SearchContactsResponse struct {
@@ -51,61 +46,120 @@ func MakeEndpoints(s Service) Endpoints {
 
 func makeAddContactEndpoint(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var newContact contact.Contact
-		if err := json.NewDecoder(r.Body).Decode(&newContact); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		request, decodeErr := decodeAddContactRequest(r)
+		if decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		req, ok := request.(CreateContactRequest)
+		if !ok {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		id, err := s.AddContact(context.Background(), newContact)
+		id, err := s.AddContact(context.Background(), req.toContact())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), err.StatusCode)
 			return
 		}
 
-		log.Printf("Generated ID: %s", id)
+		encodeAddContactResponse(w, id)
+	}
+}
 
-		response := map[string]string{
-			"id": id,
+func makeGetContactEndpoint(s Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		request, decodeErr := decodeGetContactRequest(r)
+		if decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		req, ok := request.(GetContactRequest)
+		if !ok {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			log.Printf("Error encoding response: %v", err)
+		contact, err := s.GetContact(context.Background(), req.ID)
+		if err != nil {
+			http.Error(w, err.Error(), err.StatusCode)
+			return
 		}
+
+		encodeGetContactResponse(w, contact)
+	}
+}
+
+func makeUpdateContactEndpoint(s Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		request, decodeErr := decodeUpdateContactRequest(r)
+		if decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		req, ok := request.(UpdateContactRequest)
+		if !ok {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		//todo change update not recieve id separtly
+		if err := s.UpdateContact(context.Background(), req.ID, req.toContact()); err != nil {
+			http.Error(w, err.Error(), err.StatusCode)
+			return
+		}
+		encodeUpdateContactResponse(w, req.ID)
+	}
+}
+
+func makeDeleteContactEndpoint(s Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		request, decodeErr := decodeDeleteContactRequest(r)
+		if decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+
+		req, ok := request.(DeleteContactRequest)
+		if !ok {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if err := s.DeleteContact(context.Background(), req.ID); err != nil {
+			http.Error(w, err.Error(), err.StatusCode)
+			return
+		}
+		encodeDeleteContactResponse(w)
 	}
 }
 
 func makeGetContactsEndpoint(s Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query().Get(fullTextParam)
-		limitStr := r.URL.Query().Get(limitParam)
-		offsetStr := r.URL.Query().Get(offsetParam)
-
-		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit <= 0 {
-			limit = defaultCount
+		request, decodeErr := decodeSearchContactsRequest(r)
+		if decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+			return
 		}
-
-		offset, err := strconv.Atoi(offsetStr)
-		if err != nil || offset < 0 {
-			offset = defaultOffset
-		}
-
-		contacts, err := s.GetContacts(context.Background(), limit, offset, query)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		req, ok := request.(SearchContactsRequest)
+		if !ok {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		totalContacts, err := s.CountContacts(context.Background(), query)
+		// todo use filter and func req.tofilter()
+		contacts, err := s.GetContacts(context.Background(), req.Limit, req.Offset, req.Text)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), err.StatusCode)
 			return
 		}
 
-		pagination := createPagination(offset, limit, totalContacts, r.URL)
+		totalContacts, err := s.CountContacts(context.Background(), req.Text)
+		if err != nil {
+			http.Error(w, err.Error(), err.StatusCode)
+			return
+		}
+
+		pagination := createPagination(req.Offset, req.Limit, totalContacts, r.URL)
 
 		response := SearchContactsResponse{
 			Contacts:           contacts,
@@ -157,49 +211,21 @@ func max(a, b int) int {
 	return b
 }
 
-func makeGetContactEndpoint(s Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := chi.URLParam(r, idParam)
-
-		contact, err := s.GetContact(context.Background(), id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		if err := json.NewEncoder(w).Encode(contact); err != nil {
-			http.Error(w, "Error encoding response", http.StatusInternalServerError)
-			return
-		}
+func (r CreateContactRequest) toContact() contact.Contact {
+	return contact.Contact{
+		FirstName: r.FirstName,
+		LastName:  r.LastName,
+		Phone:     r.Phone,
+		Address:   r.Address,
 	}
 }
 
-func makeUpdateContactEndpoint(s Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := chi.URLParam(r, idParam)
-		var updatedContact contact.Contact
-		if err := json.NewDecoder(r.Body).Decode(&updatedContact); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := s.UpdateContact(context.Background(), id, updatedContact); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-func makeDeleteContactEndpoint(s Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id := chi.URLParam(r, idParam)
-		if err := s.DeleteContact(context.Background(), id); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
+func (r UpdateContactRequest) toContact() contact.Contact {
+	return contact.Contact{
+		ID:        r.ID,
+		FirstName: r.FirstName,
+		LastName:  r.LastName,
+		Phone:     r.Phone,
+		Address:   r.Address,
 	}
 }
