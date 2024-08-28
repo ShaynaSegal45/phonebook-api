@@ -40,21 +40,33 @@ func (r *ContactsRepo) GetContact(ctx context.Context, id string) (contact.Conta
 	err := r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.FirstName, &c.LastName, &c.Address, &c.Phone)
 	if err != nil {
 		errMsg := fmt.Sprintf("ContactsRepo.GetContact: failed to get contact with id %s", id)
+
+		if err == sql.ErrNoRows {
+			log.Printf("%s: contact not found", errMsg)
+			return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.NotFoundError)
+		}
+
 		log.Printf("%s: %v", errMsg, err)
 		return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.InternalError)
 	}
+
 	return c, nil
 }
 
-func (r *ContactsRepo) SearchContacts(ctx context.Context, limit, offset int, query string) ([]contact.Contact, *errors.Error) {
-	queryLike := `%` + query + `%`
+func (r *ContactsRepo) SearchContacts(ctx context.Context, f contact.Filters) ([]contact.Contact, *errors.Error) {
+	queryLike := `%` + f.FullText + `%`
 	sqlQuery := `SELECT id, firstname, lastname, phone, address FROM contacts WHERE ? = "" 
                 OR firstname LIKE ? OR lastname LIKE ? OR phone LIKE ?
+				ORDER BY lastname, firstname 
                 LIMIT ? OFFSET ?`
-	rows, err := r.db.QueryContext(ctx, sqlQuery, query, queryLike, queryLike, queryLike, limit, offset)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, f.FullText, queryLike, queryLike, queryLike, f.Limit, f.Offset)
 	if err != nil {
 		errMsg := "ContactsRepo.SearchContacts"
-		log.Printf("%s: failed to search contacts with query %s: %v", errMsg, query, err)
+		if err == sql.ErrNoRows {
+			log.Printf("%s: contact not found", errMsg)
+			return nil, errors.CreateError(operationName, errMsg, err, errors.NotFoundError)
+		}
+		log.Printf("%s: failed to search contacts with query %s: %v", errMsg, f.FullText, err)
 		return nil, errors.CreateError(operationName, errMsg, err, errors.InternalError)
 	}
 	defer rows.Close()
@@ -70,6 +82,7 @@ func (r *ContactsRepo) SearchContacts(ctx context.Context, limit, offset int, qu
 		}
 		contacts = append(contacts, c)
 	}
+
 	return contacts, nil
 }
 
@@ -86,18 +99,20 @@ func (r *ContactsRepo) CountContacts(ctx context.Context, query string) (int, *e
 		return 0, errors.CreateError(operationName, errMsg, err, errors.InternalError)
 
 	}
+
 	return count, nil
 }
 
-func (r *ContactsRepo) UpdateContact(ctx context.Context, id string, c contact.Contact) *errors.Error {
-	query := `UPDATE contacts SET firstname = ?, lastname = ?, address = ?, phone = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, c.FirstName, c.LastName, c.Address, c.Phone, id)
+func (r *ContactsRepo) UpdateContact(ctx context.Context, c contact.Contact) *errors.Error {
+	query, args := buildUpdateQuery(c)
+
+	_, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		errMsg := "ContactsRepo.UpdateContact"
-		log.Printf("%s: failed to update contact with id %s: %v", errMsg, id, err)
-		return errors.CreateError(operationName, errMsg, err, errors.InternalError)
-
+		log.Printf("%s: failed to update contact with id %s: %v", errMsg, c.ID, err)
+		return errors.CreateError("UpdateContact", errMsg, err, errors.InternalError)
 	}
+
 	return nil
 }
 
@@ -110,6 +125,7 @@ func (r *ContactsRepo) DeleteContact(ctx context.Context, id string) *errors.Err
 		return errors.CreateError(operationName, errMsg, err, errors.InternalError)
 
 	}
+
 	return nil
 }
 
@@ -125,5 +141,33 @@ func (r *ContactsRepo) ContactExists(ctx context.Context, firstName, lastName st
 		log.Printf("%s: %v", errMsg, err)
 		return false, errors.CreateError(operationName, "contacExists", err, errors.InternalError)
 	}
+
 	return true, nil
+}
+
+func buildUpdateQuery(c contact.Contact) (string, []interface{}) {
+	query := `UPDATE contacts SET`
+	var args []interface{}
+
+	if c.FirstName != "" {
+		query += ` firstname = ?,`
+		args = append(args, c.FirstName)
+	}
+	if c.LastName != "" {
+		query += ` lastname = ?,`
+		args = append(args, c.LastName)
+	}
+	if c.Address != "" {
+		query += ` address = ?,`
+		args = append(args, c.Address)
+	}
+	if c.Phone != "" {
+		query += ` phone = ?,`
+		args = append(args, c.Phone)
+	}
+
+	query = query[:len(query)-1] + ` WHERE id = ?`
+	args = append(args, c.ID)
+
+	return query, args
 }

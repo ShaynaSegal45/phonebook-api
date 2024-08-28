@@ -2,6 +2,7 @@ package contactsmanaging
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -56,6 +57,11 @@ func makeAddContactEndpoint(s Service) http.HandlerFunc {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
+		validationErr := req.Validate()
+		if validationErr != nil {
+			http.Error(w, validationErr.Error(), http.StatusBadRequest)
+			return
+		}
 
 		id, err := s.AddContact(context.Background(), req.toContact())
 		if err != nil {
@@ -85,8 +91,15 @@ func makeGetContactEndpoint(s Service) http.HandlerFunc {
 			http.Error(w, err.Error(), err.StatusCode)
 			return
 		}
+		response := GetContactResponse{
+			ID:        contact.ID,
+			FirstName: contact.FirstName,
+			LastName:  contact.LastName,
+			Phone:     contact.Phone,
+			Address:   contact.Address,
+		}
 
-		encodeGetContactResponse(w, contact)
+		encodeGetContactResponse(w, response)
 	}
 }
 
@@ -102,12 +115,17 @@ func makeUpdateContactEndpoint(s Service) http.HandlerFunc {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		//todo change update not recieve id separtly
-		if err := s.UpdateContact(context.Background(), req.ID, req.toContact()); err != nil {
+
+		if validationErr := req.Validate(); validationErr != nil {
+			http.Error(w, validationErr.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := s.UpdateContact(context.Background(), req.toContact()); err != nil {
 			http.Error(w, err.Error(), err.StatusCode)
 			return
 		}
-		encodeUpdateContactResponse(w, req.ID)
+		encodeUpdateContactResponse(w)
 	}
 }
 
@@ -146,8 +164,7 @@ func makeGetContactsEndpoint(s Service) http.HandlerFunc {
 			return
 		}
 
-		// todo use filter and func req.tofilter()
-		contacts, err := s.GetContacts(context.Background(), req.Limit, req.Offset, req.Text)
+		contacts, err := s.GetContacts(context.Background(), req.toFilters())
 		if err != nil {
 			http.Error(w, err.Error(), err.StatusCode)
 			return
@@ -228,4 +245,28 @@ func (r UpdateContactRequest) toContact() contact.Contact {
 		Phone:     r.Phone,
 		Address:   r.Address,
 	}
+}
+
+func (r SearchContactsRequest) toFilters() contact.Filters {
+	return contact.Filters{
+		FullText: r.Text,
+		Limit:    r.Limit,
+		Offset:   r.Offset,
+	}
+}
+
+func (r CreateContactRequest) Validate() error {
+	if r.FirstName == "" && r.LastName == "" {
+		return fmt.Errorf("CreateContactRequest.Validate: must include firstname or lastname")
+	}
+
+	return nil
+}
+
+func (r UpdateContactRequest) Validate() error {
+	if r.ID == "" {
+		return fmt.Errorf("UpdateContactRequest.Validate: missing id")
+	}
+
+	return nil
 }
