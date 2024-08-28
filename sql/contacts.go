@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
-
 	"log"
+	"strings"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 
@@ -14,7 +14,10 @@ import (
 	"github.com/ShaynaSegal45/phonebook-api/errors"
 )
 
-const operationName = "contactsmanaging"
+const (
+	operationName = "contactsmanaging"
+	ttl           = 300 * time.Second
+)
 
 type ContactsRepo struct {
 	db    *sql.DB
@@ -176,7 +179,7 @@ func (r *ContactsRepo) GetContact(ctx context.Context, id string) (contact.Conta
 			return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.InternalError)
 		}
 
-		err = r.cache.Set(ctx, id, fmt.Sprintf("%s,%s,%s,%s,%s", c.ID, c.FirstName, c.LastName, c.Address, c.Phone), 0).Err()
+		err = r.cache.Set(ctx, id, fmt.Sprintf("%s,%s,%s,%s,%s", c.ID, c.FirstName, c.LastName, c.Address, c.Phone), ttl).Err()
 		if err != nil {
 			log.Printf("Failed to set cache for contact id %s: %v", id, err)
 		}
