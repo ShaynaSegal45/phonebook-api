@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"log"
 
@@ -14,7 +15,10 @@ import (
 	"github.com/ShaynaSegal45/phonebook-api/errors"
 )
 
-const operationName = "contactsmanaging"
+const (
+	operationName = "contactsmanaging"
+	ttl           = 300 * time.Second
+)
 
 type ContactsRepo struct {
 	db    *sql.DB
