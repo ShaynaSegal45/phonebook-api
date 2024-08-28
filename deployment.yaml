@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contact-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: contact-api
+  template:
+    metadata:
+      labels:
+        app: contact-api
+    spec:
+      containers:
+      - name: contact-api
+        image: phonebook-api:latest
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: sqlite-storage
+          mountPath: /cmd/  
+      volumes:
+      - name: sqlite-storage
+        emptyDir: {}
