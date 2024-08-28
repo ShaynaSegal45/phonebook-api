@@ -40,25 +40,6 @@ func (r *ContactsRepo) InsertContact(ctx context.Context, c contact.Contact) *er
 	return nil
 }
 
-// func (r *ContactsRepo) GetContact(ctx context.Context, id string) (contact.Contact, *errors.Error) {
-// 	query := `SELECT id, firstname, lastname, address, phone FROM contacts WHERE id = ?`
-// 	var c contact.Contact
-// 	err := r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.FirstName, &c.LastName, &c.Address, &c.Phone)
-// 	if err != nil {
-// 		errMsg := fmt.Sprintf("ContactsRepo.GetContact: failed to get contact with id %s", id)
-
-// 		if err == sql.ErrNoRows {
-// 			log.Printf("%s: contact not found", errMsg)
-// 			return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.NotFoundError)
-// 		}
-
-// 		log.Printf("%s: %v", errMsg, err)
-// 		return contact.Contact{}, errors.CreateError(operationName, errMsg, err, errors.InternalError)
-// 	}
-
-// 	return c, nil
-// }
-
 func (r *ContactsRepo) SearchContacts(ctx context.Context, f contact.Filters) ([]contact.Contact, *errors.Error) {
 	queryLike := `%` + f.FullText + `%`
 	sqlQuery := `SELECT id, firstname, lastname, phone, address FROM contacts WHERE ? = "" 
