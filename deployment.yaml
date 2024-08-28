@@ -19,7 +19,7 @@ spec:
         - containerPort: 8080
         volumeMounts:
         - name: sqlite-storage
-          mountPath: /app/data  # Changed to a directory, adjust if needed
+          mountPath: /cmd/  
       volumes:
       - name: sqlite-storage
         emptyDir: {}
